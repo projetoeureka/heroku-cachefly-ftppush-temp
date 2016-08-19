@@ -1,0 +1,55 @@
+#!/bin/bash
+
+BUILD_DIR=$1
+ENV_DIR=$3
+
+shopt -s nullglob  # if files don't exist, expand globs to zero arguments instead to themselves
+
+function indent() {
+  c='s/^/       /'
+  case $(uname) in
+    Darwin) sed -l "$c";;
+    *)      sed -u "$c";;
+  esac
+}
+
+echo "*****************************"
+echo "BUILD_DIR: $1"
+echo "CACHE_DIR: $2"
+echo "ENV_DIR: $3"
+echo "*****************************"
+echo "ENV_DIR files:"
+ls $3
+echo "*****************************"
+
+if [ ! -e "$ENV_DIR/CACHEFLY_SRC_FOLDER" ]; then
+  echo "Disabling cachefly ftp push, CACHEFLY_SRC_FOLDER config not set"
+  exit 0
+fi
+
+CACHEFLY_SRC_FOLDER=$(<$ENV_DIR/CACHEFLY_SRC_FOLDER)
+CACHEFLY_DEST_FOLDER=$(<$ENV_DIR/CACHEFLY_DEST_FOLDER)
+CACHEFLY_DEST_FOLDER=${CACHEFLY_DEST_FOLDER/\$SOURCE_VERSION/$SOURCE_VERSION}
+
+CACHEFLY_USERNAME=$(<$ENV_DIR/CACHEFLY_USERNAME)
+CACHEFLY_PASSWORD=$(<$ENV_DIR/CACHEFLY_PASSWORD)
+
+# Download ncftp
+set -e
+mkdir -p /tmp/ncftp
+pushd /tmp/ncftp
+rm -rf *.tar.gz ncftp/
+curl -o ncftp.tar.gz ftp://ftp.ncftp.com/ncftp/binaries/ncftp-3.2.5-linux-x86_64-glibc2.3-export.tar.gz
+tar xf ncftp.tar.gz
+cd ncftp*/bin
+ncftpput=$(pwd)/ncftpput
+popd
+
+# Push stuff
+cd $BUILD_DIR
+echo "Preparing files"
+mkdir -p /tmp/ncftp/_src
+cp --recursive --dereference $CACHEFLY_SRC_FOLDER/* /tmp/ncftp/_src/
+echo "Cachefly dest folder is '$CACHEFLY_DEST_FOLDER'";
+$ncftpput -R -v -m -u $CACHEFLY_USERNAME -p $CACHEFLY_PASSWORD ftp.cachefly.com $CACHEFLY_DEST_FOLDER /tmp/ncftp/_src/*
+
